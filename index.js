@@ -5,7 +5,7 @@ const app = express();
 app.use(express.json());
 
 // ⚠️ 确认这是你 Make.com 原本接收消息的 Webhook 地址
-const MAKE_WEBHOOK_URL = 'https://hook.us2.make.com/knhaajl1aaijqh39f5b5xuff93wwptg6';
+const MAKE_WEBHOOK_URL = 'https://hook.us2.make.com/wmldwkxq58x3hww3ua8e4xiimueelnit';
 
 // 内存单例防抖池（常驻服务器内存，100% 共享、不串线！）
 const bufferMap = new Map();
