@@ -62,7 +62,7 @@ app.post('/webhook', (req, res) => {
         } finally {
             bufferMap.delete(chatId);
         }
-    }, 30000); // 30000 毫秒 = 30 秒等待
+    }, 50000); // 50000 毫秒 = 50 秒等待
 });
 
 // 健康检查根路由
