@@ -4,7 +4,7 @@ const axios = require('axios');
 const app = express();
 app.use(express.json());
 
-// ⚠️ 你的 Make.com 接收 Webhook 地址（保持不变）
+// ⚠️ 你的 Make.com 接收 Webhook 地址
 const MAKE_WEBHOOK_URL = 'https://hook.us2.make.com/wmldwkxq58x3hww3ua8e4xiimueelnit';
 
 // 内存单例防抖池（常驻服务器内存，图文双收、100% 共享隔离）
@@ -26,7 +26,7 @@ app.post('/webhook', (req, res) => {
     // 2. 抓取图片的公网下载直链（Green-API 官方图床链接）
     const imageUrl = body?.messageData?.fileMessageData?.downloadUrl || null;
 
-    // 如果既没有文字也没有图片（比如位置卡片、系统撤回通知等），不防抖直接原样发给 Make
+    // 如果既没有文字也没有图片（比如位置卡片、系统通知等），不防抖直接原样发给 Make
     if (!chatId || (!text.trim() && !imageUrl)) {
         if (chatId) {
             axios.post(MAKE_WEBHOOK_URL, body).catch(e => console.error('转发非图文消息失败:', e.message));
@@ -54,7 +54,11 @@ app.post('/webhook', (req, res) => {
 
     // 4. 开启 50 秒静默等待窗口（老外彻底停下来 50 秒后，图文打包发车）
     currentItem.timer = setTimeout(async () => {
-        const mergedText = currentItem.texts.join(' ');
+        // 如果客户发了图但 0 个文字，给一句默认看图指令，防止 Dify 报空文本错误
+        const defaultText = currentItem.imageUrls.length > 0 
+            ? "Please inspect this engineering drawing or site photo and provide professional recommendations." 
+            : "";
+        const mergedText = currentItem.texts.join(' ') || defaultText;
         const finalPayload = currentItem.lastBody;
 
         // 确保数据结构完整
@@ -68,22 +72,35 @@ app.post('/webhook', (req, res) => {
         } else if (finalPayload.messageData.extendedTextMessageData) {
             finalPayload.messageData.extendedTextMessageData.text = mergedText;
         } else {
-            // 如果最后一条发的是图片，注入合并好的文字进 textMessageData
             finalPayload.messageData.textMessageData = { textMessage: mergedText };
         }
 
-        // 如果期间收到过图片，把最新的图片直链带上
+        // ==========================================
+        // 🌟 核心改动：把 Dify 专用的 Vision 数组在 Node.js 里组装好！
+        // ==========================================
         if (currentItem.imageUrls.length > 0) {
             const latestImage = currentItem.imageUrls[currentItem.imageUrls.length - 1];
             
-            // 顶层挂载方便读取的字段
+            // 顶层挂载方便读取
             finalPayload.attachedImageUrl = latestImage;
 
-            // 同时写入标准 fileMessageData，确保兼容
+            // 写入标准 fileMessageData
             if (!finalPayload.messageData.fileMessageData) {
                 finalPayload.messageData.fileMessageData = {};
             }
             finalPayload.messageData.fileMessageData.downloadUrl = latestImage;
+
+            // 构造合法的 Dify 图片数组 (有图片时)
+            finalPayload.difyFiles = [
+                {
+                    type: "image",
+                    transfer_method: "remote_url",
+                    url: latestImage
+                }
+            ];
+        } else {
+            // 纯文字时：构造成标准的空数组 []（Dify 官方 100% 接受空数组，绝不报错！）
+            finalPayload.difyFiles = [];
         }
 
         try {
@@ -94,7 +111,7 @@ app.post('/webhook', (req, res) => {
         } finally {
             bufferMap.delete(chatId);
         }
-    }, 50000); // 保持你设定的 50 秒防抖窗口
+    }, 50000); // 50 秒防抖
 });
 
 // 健康检查根路由
